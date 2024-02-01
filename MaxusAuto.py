@@ -73,14 +73,15 @@ def generate():
     capture_name = 'Capture Variable'
     capture_name_mc = 'McCapture Name'
 
+    operator_box = ['Equal', 'LessThan', 'LessThanOrEqual', 'GreaterThan', 'GreaterThanOrEqual',
+                    'NotEqual']
+    customize_box = ['Continuous3Frame']
+
     # --- 参数列表 ---#
     for_mode = 0  # for模式
-    flag = False
-    count_out_var = 0
     case_len = 1
     hil_cap_list = []  # HIL变量列表
     inca_cap_list = []  # INCA变量列表
-
     sheet_name = gui_sheet().get()  # 获取测试用例的sheet名
     map_path = gui_mapping().get()
     save_path = gui_save().get()
@@ -120,6 +121,8 @@ def generate():
                 func_lv1 = rdf.cell_value(i, functionality1)  # 一级功能
                 func_lv2 = rdf.cell_value(i, functionality2)  # 二级功能
 
+                nxt = i + 1
+
                 # 略过功能ID
                 if (func_lv1 != '' and seq_name == '') or (func_lv2 != '' and seq_name == ''):
                     pass
@@ -139,6 +142,10 @@ def generate():
                         path4 = os.path.join(path3, path2)  # 创造完整路径
                         path5 = os.path.join(path1, path2)
                         my_seq.callLibrary(path5, path2, path4)  # 加载clib文件
+
+                    # 跳过空行
+                    elif input_command == '' and output_val == '':
+                        continue
 
                     # For功能
                     elif input_command != '' and input_val == 'FOR':
@@ -176,25 +183,6 @@ def generate():
                         if rdf.cell_value(i + 1, output_var_default) == '':
                             for_mode = 0  # For模式结束(检测列下一行为空白)
 
-                    # 跳过空行
-                    elif input_command == '' and output_val == '':
-                        continue
-
-                    # 读值
-                    elif output_var != '' and for_mode == 0:
-                        var_box = ['Equal', 'LessThan', 'LessThanOrEqual', 'GreaterThan', 'GreaterThanOrEqual',
-                                   'NotEqual']
-                        if operator in var_box:
-                            if output_val != '':  # 有读取值
-                                read_val, tol_mod, tol_val = regular_expression(output_val)
-                                tol_mod_name = tolerance_mode_string(tol_mod)
-                                print("Tolerance Mode Name: ", tol_mod_name)
-                            else:  # 无读取值
-                                tol_mod_name = 'Null'
-                        my_seq.read_tolerance(False, '', output_var, read_val, tol_mod_name,
-                                              tol_val, 1,
-                                              'WaitUntilTrue', test_result, text)
-
                     # for0
                     elif output_val == '' and '.clib' not in input_command and for_mode == 0:
                         write, isMC3 = my_seq.writeseq(input_command, int(input_val), 1, text)
@@ -206,12 +194,42 @@ def generate():
                     # command=wait，for1
                     elif input_command == 'wait' and for_mode == 1:
                         add_for.children.append(my_seq.wait(int(input_val)))
-                    if output_var != '':
-                        isMC1 = my_seq.finditem(output_var).values[0, 1] == 'Measurement'  # 添加INCA变量
-                        if isMC1 and output_var not in inca_cap_list:
-                            inca_cap_list.append(output_var)
-                        elif not isMC1 and output_var not in hil_cap_list:
-                            hil_cap_list.append(output_var)
+                        if output_var != '':
+                            isMC1 = my_seq.finditem(output_var).values[0, 1] == 'Measurement'  # 添加INCA变量
+                            if isMC1 and output_var not in inca_cap_list:
+                                inca_cap_list.append(output_var)
+                            elif not isMC1 and output_var not in hil_cap_list:
+                                hil_cap_list.append(output_var)
+
+                    # 读入期望结果
+                    elif output_var != '' and operator in operator_box and for_mode == 0:
+                        try:
+                            read_val, tol_mod, tol_val = regular_expression(output_val)
+                            tol_mod_name = tolerance_num_2_string(tol_mod)
+                            time_opt = rdf.cell_value(nxt, operator_default)
+                            timeout_val = rdf.cell_value(nxt, output_val_default)
+                            my_seq.read_tolerance(False, operator, output_var, read_val, tol_mod_name,
+                                                  tol_val, 1, time_opt, timeout_val, text)
+                        except IOError:
+                            print("Error: 请写入正确的格式！")
+                        else:
+                            print("开始读期望结果 ----")
+                            print("Tolerance Mode Name: ", tol_mod_name)
+                            print('current output line: ', i)
+                            print("Time options: ", time_opt, timeout_val)
+                            print("读取完毕！参数名", output_var)
+
+                    # 自定义功能————快发三帧
+                    elif output_var != '' and operator in customize_box and for_mode == 0:
+                        try:
+                            script_txt = text_2_script()
+                            seq.scriptblock(1,output_var, script_txt)
+                            print('1',output_var)
+                        except IOError:
+                            print("Error: 请写入正确的格式！")
+                        else:
+                            print("Script: ", script_txt)
+                            print("创建完毕！自定义Script名：", output_var)
 
             my_seq.startcapture(hil_cap_list, inca_cap_list, capture_name)
             if not inca_cap_list:
